@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { courseForLesson, exportRecords, lessonById, persist, saveAttempt, setDownloaded, state, updateTokenClassification } from './store';
-import type { ErrorCategory, Lesson, PracticeAttempt, PracticeView } from './types';
+import { activeProfileId, addProfile, courseForLesson, exportRecords, lessonById, mergeStudentProfiles, persist, profiles, saveAttempt, setDownloaded, state, updateTokenClassification } from './store';
+import { compareStates, mergeStates, type DraftChoices, type StateComparison } from './merge';
+import type { ErrorCategory, Lesson, LessonProgress, PracticeAttempt, PracticeView } from './types';
 import { compareSentence, scoreAttempt, segmentText } from './utils';
 
 const view = ref<PracticeView>(state.activeLessonId ? 'practice' : 'library');
@@ -14,6 +15,24 @@ const segmentEnd = ref(1);
 const teacherAttemptId = ref(state.attempts[0]?.id ?? '');
 const teacherDraft = ref(state.attempts[0]?.teacherFeedback ?? '');
 let toastTimer = 0;
+
+const mergePrimaryId = ref('');
+const mergeSecondaryId = ref('');
+const mergeKeptName = ref('');
+const mergeChoices = ref<DraftChoices>({});
+const comparison = ref<StateComparison | null>(null);
+const mergeStatus = ref<'idle' | 'ready' | 'merging' | 'success' | 'error'>('idle');
+const mergeError = ref('');
+
+const primaryProfile = computed(() => profiles.find((profile) => profile.id === mergePrimaryId.value));
+const secondaryProfile = computed(() => profiles.find((profile) => profile.id === mergeSecondaryId.value));
+const canCompare = computed(() => !!mergePrimaryId.value && !!mergeSecondaryId.value && mergePrimaryId.value !== mergeSecondaryId.value);
+const unresolvedConflicts = computed(() => (comparison.value?.conflicts ?? []).filter((conflict) => !mergeChoices.value[conflict.lessonId]).length);
+const canMerge = computed(() => !!comparison.value && unresolvedConflicts.value === 0 && mergeStatus.value !== 'success' && mergeStatus.value !== 'merging');
+const mergedAttemptPreview = computed<PracticeAttempt[]>(() => {
+  if (!primaryProfile.value || !secondaryProfile.value) return [];
+  return mergeStates(primaryProfile.value.state, secondaryProfile.value.state, mergeChoices.value).attempts;
+});
 
 const activeLesson = computed(() => lessonById(state.activeLessonId));
 const activeCourse = computed(() => activeLesson.value ? courseForLesson(activeLesson.value.id) : undefined);
@@ -213,6 +232,60 @@ function formatDate(value: string): string {
   return new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+function openMerge() {
+  mergePrimaryId.value = activeProfileId.value;
+  mergeSecondaryId.value = profiles.find((profile) => profile.id !== activeProfileId.value)?.id ?? '';
+  mergeKeptName.value = '';
+  resetMerge();
+  view.value = 'merge';
+}
+
+function resetMerge() {
+  comparison.value = null;
+  mergeChoices.value = {};
+  mergeStatus.value = 'idle';
+  mergeError.value = '';
+}
+
+function onPickProfiles() {
+  resetMerge();
+}
+
+function startCompare() {
+  if (!canCompare.value || !primaryProfile.value || !secondaryProfile.value) return;
+  comparison.value = compareStates(primaryProfile.value.state, secondaryProfile.value.state);
+  mergeChoices.value = {};
+  mergeStatus.value = 'ready';
+  mergeError.value = '';
+}
+
+function draftSummary(progress: LessonProgress): string {
+  const answered = Object.values(progress.answers).filter((answer) => (answer ?? '').trim()).length;
+  const total = Object.keys(progress.answers).length;
+  return `${answered}/${total} 句已填 · ${formatDate(progress.updatedAt)}`;
+}
+
+function createNewProfile() {
+  const id = addProfile(`学生${profiles.length + 1}`);
+  if (!mergePrimaryId.value) mergePrimaryId.value = id;
+  else if (!mergeSecondaryId.value) mergeSecondaryId.value = id;
+  resetMerge();
+}
+
+function confirmMerge() {
+  if (!canMerge.value || !primaryProfile.value || !secondaryProfile.value) return;
+  mergeStatus.value = 'merging';
+  const outcome = mergeStudentProfiles(mergePrimaryId.value, mergeSecondaryId.value, mergeChoices.value, mergeKeptName.value);
+  if (outcome.ok) {
+    mergeStatus.value = 'success';
+    persist();
+    notify('档案已归并');
+  } else {
+    mergeStatus.value = 'error';
+    mergeError.value = outcome.error ?? '写入失败，可重新尝试';
+  }
+}
+
 function onConnectionChange() {
   online.value = navigator.onLine;
   persist();
@@ -248,6 +321,7 @@ onBeforeUnmount(() => {
             <div><h1>EchoStep</h1><p>移动端语言听写</p></div>
           </div>
           <div class="icon-row">
+            <button class="icon-button" aria-label="合并学生档案" title="合并学生档案" @click="openMerge">⇄</button>
             <button class="icon-button" :aria-label="state.theme === 'light' ? '切换到深色模式' : '切换到浅色模式'" @click="toggleTheme">{{ state.theme === 'light' ? '◐' : '☀' }}</button>
             <button class="icon-button" aria-label="减小字号" @click="changeFont(-0.05)">A−</button>
             <button class="icon-button" aria-label="增大字号" @click="changeFont(0.05)">A＋</button>
@@ -415,6 +489,101 @@ onBeforeUnmount(() => {
           </template>
         </div>
         <div v-else class="empty-state"><strong>暂无学生作答</strong>学习端提交听写后，这里会出现练习记录。</div>
+      </div>
+
+      <div v-else-if="view === 'merge'" class="page">
+        <header class="topbar">
+          <button class="back-button" aria-label="返回课程库" @click="view = 'library'">‹</button>
+          <div class="brand"><div class="brand-mark">⇄</div><div><h1>合并学生档案</h1><p>并排核对后归并到一份</p></div></div>
+        </header>
+
+        <section class="panel">
+          <div class="dictation-label"><strong>选择两份档案</strong><span>保留的那份并入另一份</span></div>
+          <div class="merge-pickers">
+            <label class="merge-pick">
+              <span>保留档案</span>
+              <select v-model="mergePrimaryId" @change="onPickProfiles">
+                <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }} · {{ profile.state.attempts.length }} 条记录</option>
+              </select>
+            </label>
+            <div class="merge-plus">＋</div>
+            <label class="merge-pick">
+              <span>并入档案</span>
+              <select v-model="mergeSecondaryId" @change="onPickProfiles">
+                <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }} · {{ profile.state.attempts.length }} 条记录</option>
+              </select>
+            </label>
+          </div>
+          <label class="merge-rename">
+            <span>保留后名称（改名时填写，可留空）</span>
+            <input v-model="mergeKeptName" type="text" :placeholder="primaryProfile?.name ?? '学生'" />
+          </label>
+          <div class="merge-actions">
+            <var-button type="primary" @click="startCompare" :disabled="!canCompare">开始核对差异</var-button>
+            <var-button type="default" variant="outline" @click="createNewProfile">新建空白档案</var-button>
+          </div>
+          <p v-if="!canCompare && profiles.length < 2" class="merge-hint">至少需要两份档案才能合并，可先新建一份空白档案。</p>
+        </section>
+
+        <template v-if="comparison && primaryProfile && secondaryProfile">
+          <section class="panel">
+            <div class="dictation-label"><strong>并排核对</strong><span>{{ primaryProfile.name }} ← {{ secondaryProfile.name }}</span></div>
+            <div class="merge-compare">
+              <div class="merge-col">
+                <h4>{{ primaryProfile.name }}</h4>
+                <p>练习记录 <b>{{ comparison.primaryAttempts.length }}</b> 条</p>
+                <p>教师反馈 <b>{{ comparison.primaryFeedbackCount }}</b> 条</p>
+                <p>已分类错误 <b>{{ comparison.primaryClassifiedCount }}</b> 处</p>
+                <p>仅这边的草稿 <b>{{ comparison.primaryOnly.length }}</b> 课</p>
+              </div>
+              <div class="merge-col">
+                <h4>{{ secondaryProfile.name }}</h4>
+                <p>练习记录 <b>{{ comparison.secondaryAttempts.length }}</b> 条</p>
+                <p>教师反馈 <b>{{ comparison.secondaryFeedbackCount }}</b> 条</p>
+                <p>已分类错误 <b>{{ comparison.secondaryClassifiedCount }}</b> 处</p>
+                <p>仅这边的草稿 <b>{{ comparison.secondaryOnly.length }}</b> 课</p>
+              </div>
+            </div>
+            <p class="merge-hint">重复的 {{ comparison.duplicateAttemptIds.length }} 条记录只保留一份；已提交记录按提交时间并入，教师反馈与错词分类仍指向原课节。</p>
+          </section>
+
+          <section v-if="comparison.conflicts.length" class="panel">
+            <div class="dictation-label"><strong>课节草稿冲突</strong><span>两边都有未交答案，选择保留哪份</span></div>
+            <div v-for="conflict in comparison.conflicts" :key="conflict.lessonId" class="conflict-card">
+              <h4>{{ conflict.lessonTitle }}</h4>
+              <p class="conflict-lesson">{{ conflict.lessonId }}</p>
+              <label class="conflict-option" :class="{ active: mergeChoices[conflict.lessonId] === 'primary' }">
+                <input type="radio" :name="`draft-${conflict.lessonId}`" value="primary" v-model="mergeChoices[conflict.lessonId]" />
+                <div><strong>保留「{{ primaryProfile.name }}」</strong><span>{{ draftSummary(conflict.primary) }}</span></div>
+              </label>
+              <label class="conflict-option" :class="{ active: mergeChoices[conflict.lessonId] === 'secondary' }">
+                <input type="radio" :name="`draft-${conflict.lessonId}`" value="secondary" v-model="mergeChoices[conflict.lessonId]" />
+                <div><strong>保留「{{ secondaryProfile.name }}」</strong><span>{{ draftSummary(conflict.secondary) }}</span></div>
+              </label>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="dictation-label"><strong>并入后的练习记录</strong><span>按提交时间 · 不重复计数</span></div>
+            <div v-for="attempt in mergedAttemptPreview" :key="attempt.id" class="history-card">
+              <div class="history-top"><strong>{{ attempt.lessonTitle }}</strong><span class="history-score">{{ attempt.score }} 分</span></div>
+              <p>{{ formatDate(attempt.submittedAt) }} · {{ attempt.courseTitle }}<span v-if="attempt.teacherFeedback"> · 含教师反馈</span><span v-if="attempt.sentenceAttempts.flatMap((s) => s.tokens).some((t) => !t.correct && t.category !== 'unclassified')"> · 已分类</span></p>
+            </div>
+            <p v-if="!mergedAttemptPreview.length" class="merge-hint">暂无已提交记录。</p>
+          </section>
+
+          <var-button block type="primary" :disabled="!canMerge" @click="confirmMerge">
+            {{ mergeStatus === 'merging' ? '正在写入…' : '确认合并' }}
+          </var-button>
+          <p v-if="mergeStatus === 'error'" class="merge-error">{{ mergeError }}</p>
+          <p v-else-if="unresolvedConflicts > 0" class="merge-hint">还有 {{ unresolvedConflicts }} 个课节的草稿未选择，选定后才会写入。</p>
+        </template>
+
+        <section v-if="mergeStatus === 'success'" class="panel merge-success">
+          <strong>合并完成</strong>
+          <p>已归并到「{{ primaryProfile?.name }}」。练习记录按原时间并入，教师反馈与错词分类仍指向原课节，草稿按你的选择保留。</p>
+          <var-button block type="primary" @click="view = 'library'">返回课程库</var-button>
+        </section>
       </div>
 
       <div v-if="toast" style="position: fixed; z-index: 30; left: 50%; bottom: 28px; transform: translateX(-50%); padding: 11px 16px; border-radius: 12px; background: #17233d; color: white; font-size: .78rem; box-shadow: 0 10px 30px rgb(0 0 0 / .2)">{{ toast }}</div>

@@ -1,5 +1,5 @@
 export type ErrorCategory = 'unclassified' | 'spelling' | 'omitted' | 'extra' | 'punctuation' | 'grammar';
-export type PracticeView = 'library' | 'practice' | 'result' | 'teacher';
+export type PracticeView = 'library' | 'practice' | 'result' | 'teacher' | 'merge';
 export type ThemeMode = 'light' | 'dark';
 
 export interface Sentence {
