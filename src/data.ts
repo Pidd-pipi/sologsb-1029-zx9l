@@ -1,4 +1,4 @@
-import type { Course, PersistedState } from './types';
+import type { Course, PersistedState, StudentProfile } from './types';
 
 export const demoCourses: Course[] = [
   {
@@ -64,24 +64,27 @@ export const demoCourses: Course[] = [
   }
 ];
 
-export const createInitialState = (): PersistedState => ({
-  schemaVersion: 1,
-  courses: structuredClone(demoCourses),
+/** 同一学生改名前的旧档案：练习记录较早，课节进度停在办理值机。 */
+const studentLining: StudentProfile = {
+  id: 'student-lining',
+  name: '林宁',
+  createdAt: '2026-09-18T08:00:00.000Z',
+  mergedFrom: [],
   attempts: [
     {
-      id: 'demo-attempt-1',
+      id: 'attempt-lining-airport-01',
       lessonId: 'airport-01',
       lessonTitle: '办理值机',
       courseTitle: '日常英语 · 机场与出行',
-      submittedAt: '2026-09-24T10:20:00.000Z',
-      score: 84,
+      submittedAt: '2026-09-20T10:20:00.000Z',
+      score: 92,
       teacherFeedback: '连读细节明显进步。注意 bags are 的词尾衔接，再听一遍第二句。',
       sentenceAttempts: [
         {
           sentenceId: 'airport-01-s1',
           source: 'I would like to check in for my flight to London.',
           answer: 'I would like to check in for my flight to London',
-          score: 94,
+          score: 92,
           tokens: [
             { index: 0, expected: 'I', actual: 'I', correct: true, category: 'unclassified', reason: '' },
             { index: 1, expected: 'would', actual: 'would', correct: true, category: 'unclassified', reason: '' },
@@ -93,7 +96,8 @@ export const createInitialState = (): PersistedState => ({
             { index: 7, expected: 'my', actual: 'my', correct: true, category: 'unclassified', reason: '' },
             { index: 8, expected: 'flight', actual: 'flight', correct: true, category: 'unclassified', reason: '' },
             { index: 9, expected: 'to', actual: 'to', correct: true, category: 'unclassified', reason: '' },
-            { index: 10, expected: 'London', actual: 'London', correct: true, category: 'unclassified', reason: '' }
+            { index: 10, expected: 'London', actual: 'London', correct: true, category: 'unclassified', reason: '' },
+            { index: 11, expected: '.', actual: '', correct: false, category: 'punctuation', reason: '句末标点习惯性漏掉' }
           ]
         }
       ]
@@ -101,11 +105,108 @@ export const createInitialState = (): PersistedState => ({
   ],
   progress: {
     'airport-01': {
-      answers: { 'airport-01-s1': 'I would like to check in for my flight to London' },
+      answers: {
+        'airport-01-s1': 'I would like to check in for my flight to London',
+        'airport-01-s2': 'Could I have a window seat please'
+      },
       activeSentenceId: 'airport-01-s2',
-      updatedAt: '2026-09-24T10:10:00.000Z'
+      updatedAt: '2026-09-20T10:10:00.000Z'
+    },
+    'airport-02': {
+      answers: { 'airport-02-s1': 'Please place your laptop in a separate tray' },
+      activeSentenceId: 'airport-02-s1',
+      updatedAt: '2026-09-21T09:00:00.000Z'
     }
-  },
+  }
+};
+
+/** 改名后的新档案：练习记录较新，课节进度推进到了确认行动项；办理值机一课两边都留有未交草稿。 */
+const studentLinNing: StudentProfile = {
+  id: 'student-lin-ning',
+  name: '林宁宁',
+  createdAt: '2026-09-25T08:00:00.000Z',
+  mergedFrom: [],
+  attempts: [
+    {
+      id: 'attempt-linning-airport-01',
+      lessonId: 'airport-01',
+      lessonTitle: '办理值机',
+      courseTitle: '日常英语 · 机场与出行',
+      submittedAt: '2026-09-26T03:30:00.000Z',
+      score: 78,
+      teacherFeedback: '第二次提交标点齐全，保持。',
+      sentenceAttempts: [
+        {
+          sentenceId: 'airport-01-s2',
+          source: 'Could I have a window seat, please?',
+          answer: 'Could I have a window seat please',
+          score: 78,
+          tokens: [
+            { index: 0, expected: 'Could', actual: 'Could', correct: true, category: 'unclassified', reason: '' },
+            { index: 1, expected: 'I', actual: 'I', correct: true, category: 'unclassified', reason: '' },
+            { index: 2, expected: 'have', actual: 'have', correct: true, category: 'unclassified', reason: '' },
+            { index: 3, expected: 'a', actual: 'a', correct: true, category: 'unclassified', reason: '' },
+            { index: 4, expected: 'window', actual: 'window', correct: true, category: 'unclassified', reason: '' },
+            { index: 5, expected: 'seat', actual: 'seat', correct: true, category: 'unclassified', reason: '' },
+            { index: 6, expected: ',', actual: '', correct: false, category: 'punctuation', reason: '' },
+            { index: 7, expected: 'please', actual: 'please', correct: true, category: 'unclassified', reason: '' },
+            { index: 8, expected: '?', actual: '', correct: false, category: 'punctuation', reason: '' }
+          ]
+        }
+      ]
+    },
+    {
+      id: 'attempt-linning-meeting-01',
+      lessonId: 'meeting-01',
+      lessonTitle: '确认行动项',
+      courseTitle: '职场英语 · 会议沟通',
+      submittedAt: '2026-09-28T07:05:00.000Z',
+      score: 80,
+      teacherFeedback: '',
+      sentenceAttempts: [
+        {
+          sentenceId: 'meeting-01-s1',
+          source: 'Let me make sure I understand the next step.',
+          answer: 'Let me make I understand next step.',
+          score: 80,
+          tokens: [
+            { index: 0, expected: 'Let', actual: 'Let', correct: true, category: 'unclassified', reason: '' },
+            { index: 1, expected: 'me', actual: 'me', correct: true, category: 'unclassified', reason: '' },
+            { index: 2, expected: 'make', actual: 'make', correct: true, category: 'unclassified', reason: '' },
+            { index: 3, expected: 'sure', actual: '', correct: false, category: 'omitted', reason: 'make sure 连读没听出 sure' },
+            { index: 4, expected: 'I', actual: 'I', correct: true, category: 'unclassified', reason: '' },
+            { index: 5, expected: 'understand', actual: 'understand', correct: true, category: 'unclassified', reason: '' },
+            { index: 6, expected: 'the', actual: '', correct: false, category: 'omitted', reason: '' },
+            { index: 7, expected: 'next', actual: 'next', correct: true, category: 'unclassified', reason: '' },
+            { index: 8, expected: 'step', actual: 'step', correct: true, category: 'unclassified', reason: '' },
+            { index: 9, expected: '.', actual: '.', correct: true, category: 'unclassified', reason: '' }
+          ]
+        }
+      ]
+    }
+  ],
+  progress: {
+    'airport-01': {
+      answers: { 'airport-01-s2': 'Could I have a window seat?' },
+      activeSentenceId: 'airport-01-s3',
+      updatedAt: '2026-09-27T12:00:00.000Z'
+    },
+    'meeting-01': {
+      answers: {
+        'meeting-01-s1': 'Let me make sure I understand the next step.',
+        'meeting-01-s2': 'I will share the revised draft by Thursday'
+      },
+      activeSentenceId: 'meeting-01-s2',
+      updatedAt: '2026-09-29T02:10:00.000Z'
+    }
+  }
+};
+
+export const createInitialState = (): PersistedState => ({
+  schemaVersion: 2,
+  courses: structuredClone(demoCourses),
+  students: [structuredClone(studentLining), structuredClone(studentLinNing)],
+  activeStudentId: 'student-lin-ning',
   activeLessonId: '',
   activeSentenceId: '',
   theme: 'light',
